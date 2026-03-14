@@ -3,50 +3,50 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Apex Particle Engine - 60K Final</title>
+    <title>Omni Particle Engine - Stable V8</title>
     <style>
         body { margin: 0; overflow: hidden; background: #000; color: #00ff00; font-family: 'Courier New', monospace; }
         canvas { display: block; position: absolute; inset: 0; }
         #video-container { 
-            position: absolute; bottom: 30px; right: 30px; width: 240px; height: 180px; 
-            border: 2px solid #00ff00; border-radius: 15px; overflow: hidden; 
-            transform: scaleX(-1); background: #111; z-index: 1000;
+            position: absolute; bottom: 20px; right: 20px; width: 220px; height: 160px; 
+            border: 2px solid #00ff00; border-radius: 10px; overflow: hidden; 
+            transform: scaleX(-1); background: #111; z-index: 100;
         }
         video { width: 100%; height: 100%; object-fit: cover; }
         #hud { 
-            position: absolute; top: 30px; left: 30px; background: rgba(0, 10, 0, 0.9); 
-            padding: 20px; border: 1px solid #00ff00; z-index: 1000; pointer-events: none;
+            position: absolute; top: 20px; left: 20px; background: rgba(0, 20, 0, 0.9); 
+            padding: 15px; border: 1px solid #00ff00; z-index: 100; pointer-events: none;
         }
-        .val { color: #fff; font-size: 1.2rem; font-weight: bold; }
-        #boot-layer {
+        .status { color: #fff; font-weight: bold; }
+        #boot-overlay {
             position: absolute; inset: 0; background: #000; display: flex; 
             flex-direction: column; align-items: center; justify-content: center; z-index: 9999;
         }
         #start-btn {
             padding: 25px 60px; background: #00ff00; color: #000; border: none;
-            font-weight: 900; font-size: 1.5rem; cursor: pointer; border-radius: 5px;
+            font-weight: 900; font-size: 1.5rem; cursor: pointer; border-radius: 4px;
             box-shadow: 0 0 40px #00ff00;
         }
     </style>
 </head>
 <body>
 
-    <div id="boot-layer">
-        <h1 style="margin-bottom: 30px;">APEX ENGINE V7</h1>
-        <button id="start-btn">ENGAGE SYSTEM</button>
+    <div id="boot-overlay">
+        <h1 style="letter-spacing: 5px; margin-bottom: 20px;">SYSTEM RECOVERY V8</h1>
+        <button id="start-btn">BOOT CORE ENGINE</button>
     </div>
 
     <div id="hud">
-        <div>TEMPLATE: <span id="mode-ui" class="val">INITIALIZING</span></div>
-        <div>GESTURE: <span id="gest-ui" class="val">NONE</span></div>
-        <div>SPIN FORCE: <span id="speed-ui" class="val">0.0</span></div>
+        <div>CORE: <span id="mode-ui" class="status">HEART</span></div>
+        <div>GESTURE: <span id="gest-ui" class="status">IDLE</span></div>
+        <div>FORCE: <span id="speed-ui" class="status">0.0</span></div>
     </div>
 
     <div id="video-container"><video id="input-video" autoplay playsinline muted></video></div>
 
     <script src="https://cdn.jsdelivr.net/npm/three@0.150.1/build/three.min.js"></script>
-    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/hands@0.4.1646424915/hands.js"></script>
-    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils@0.4/camera_utils.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/hands/hands.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js"></script>
 
     <script>
         const video = document.getElementById('input-video');
@@ -56,19 +56,19 @@
         const speedUI = document.getElementById('speed-ui');
 
         let scene, camera, renderer, points, targetPositions;
-        const pCount = 60000; 
+        const pCount = 50000; 
         let currentMode = 0;
-        let spinSpeed = 0;
+        let spinForce = 0;
         let lastX = 0.5;
-        const modes = ['HEART', 'SATURN_PRO', 'FOX_NEBULA', 'SKULL_VOID', 'PLANET_X', 'GALAXY'];
+        const modes = ['HEART', 'SATURN_PRO', 'SKULL_VOID', 'FOX_NEBULA', 'ZODIAC_STAR', 'GALAXY'];
 
         // --- 1. Engine Initialization ---
-        function initEngine() {
+        function init3D() {
             scene = new THREE.Scene();
             camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
-            camera.position.z = 25;
+            camera.position.z = 22;
 
-            renderer = new THREE.WebGLRenderer({ antialias: false });
+            renderer = new THREE.WebGLRenderer({ antialias: false, powerPreference: "high-performance" });
             renderer.setSize(window.innerWidth, window.innerHeight);
             document.body.appendChild(renderer.domElement);
 
@@ -78,19 +78,19 @@
             targetPositions = new Float32Array(pCount * 3);
 
             for (let i = 0; i < pCount; i++) {
-                cols[i*3] = Math.random(); cols[i*3+1] = 0.2; cols[i*3+2] = 1.0;
+                cols[i*3] = Math.random(); cols[i*3+1] = 0.3; cols[i*3+2] = 1.0;
             }
 
             geo.setAttribute('position', new THREE.BufferAttribute(pos, 3));
             geo.setAttribute('color', new THREE.BufferAttribute(cols, 3));
             points = new THREE.Points(geo, new THREE.PointsMaterial({
-                size: 0.04, vertexColors: true, blending: THREE.AdditiveBlending, transparent: true
+                size: 0.045, vertexColors: true, blending: THREE.AdditiveBlending, transparent: true, opacity: 0.8
             }));
             scene.add(points);
         }
 
-        // --- 2. Advanced Geometry Logic ---
-        function generateTemplate(mode, hX, hY, scale = 1.0) {
+        // --- 2. Shape Logic ---
+        function setShape(mode, hX, hY, scale = 1.0) {
             modeUI.innerText = modes[mode];
             for (let i = 0; i < pCount; i++) {
                 let x = 0, y = 0, z = 0;
@@ -106,20 +106,16 @@
                         const u = Math.random() * Math.PI * 2, v = Math.random() * Math.PI;
                         x = 5 * Math.sin(v) * Math.cos(u); y = 5 * Math.sin(v) * Math.sin(u); z = 5 * Math.cos(v);
                     } else {
-                        const a = Math.random() * Math.PI * 2, r = 8 + Math.random() * 5;
+                        const a = Math.random() * Math.PI * 2, r = 8 + Math.random() * 6;
                         x = r * Math.cos(a); y = r * Math.sin(a) * 0.15; z = r * Math.sin(a);
                     }
                 } else if (modes[mode] === 'SKULL_VOID') {
                     const u = t * Math.PI * 2, v = Math.random() * Math.PI;
                     x = 8 * Math.sin(v) * Math.cos(u); y = 11 * Math.cos(v); z = 7 * Math.sin(v) * Math.sin(u);
-                    if (y > 2 && Math.abs(x) < 3) { x *= 1.8; z *= 1.8; } 
-                } else if (modes[mode] === 'PLANET_X') {
-                    const u = Math.random() * Math.PI * 2, v = Math.random() * Math.PI;
-                    const r = 10 + Math.sin(t * 100) * 1.2;
-                    x = r * Math.sin(v) * Math.cos(u); y = r * Math.sin(v) * Math.sin(u); z = r * Math.cos(v);
+                    if (y > 2 && Math.abs(x) < 3) { x *= 1.8; z *= 1.8; }
                 } else {
-                    const r = t * 15; const a = t * Math.PI * 20;
-                    x = r * Math.cos(a); y = r * Math.sin(a); z = Math.sin(t * 10) * 5;
+                    const r = t * 15; const a = t * Math.PI * 15;
+                    x = r * Math.cos(a); y = r * Math.sin(a); z = Math.sin(t * 10) * 4;
                 }
 
                 targetPositions[idx] = (x * scale) + hX;
@@ -128,9 +124,9 @@
             }
         }
 
-        // --- 3. Stability Logic & Tracking ---
+        // --- 3. Stable AI Connection ---
         const hands = new Hands({locateFile: (f) => `https://cdn.jsdelivr.net/npm/@mediapipe/hands/${f}`});
-        hands.setOptions({ maxNumHands: 1, modelComplexity: 1, minDetectionConfidence: 0.7, minTrackingConfidence: 0.7 });
+        hands.setOptions({ maxNumHands: 1, modelComplexity: 1, minDetectionConfidence: 0.7 });
 
         let lastSwitch = 0;
         hands.onResults((res) => {
@@ -139,57 +135,58 @@
                 const hX = (0.5 - h[9].x) * 50;
                 const hY = (0.5 - h[9].y) * 40;
 
-                // Spin Calculation
-                spinSpeed = THREE.MathUtils.lerp(spinSpeed, Math.abs(h[9].x - lastX) * 30, 0.1);
-                speedUI.innerText = spinSpeed.toFixed(1);
+                spinForce = THREE.MathUtils.lerp(spinForce, Math.abs(h[9].x - lastX) * 40, 0.1);
+                speedUI.innerText = spinForce.toFixed(1);
                 lastX = h[9].x;
 
-                // Mode Switching (Depth)
                 const depth = Math.hypot(h[0].x - h[9].x, h[0].y - h[9].y);
                 if (depth > 0.22 && Date.now() - lastSwitch > 2000) {
                     currentMode = (currentMode + 1) % modes.length;
                     lastSwitch = Date.now();
                 }
 
-                // Expand Gesture
                 const span = Math.hypot(h[4].x - h[20].x, h[4].y - h[20].y);
-                const scale = span > 0.18 ? 2.5 : 1.0;
-                gestUI.innerText = span > 0.18 ? "EXPANDED" : "NORMAL";
+                const scale = span > 0.18 ? 2.8 : 1.0;
+                gestUI.innerText = span > 0.18 ? "EXPAND" : "READY";
 
-                generateTemplate(currentMode, hX, hY, scale);
+                setShape(currentMode, hX, hY, scale);
             } else {
-                generateTemplate(currentMode, 0, 0, 1.0);
+                setShape(currentMode, 0, 0, 1.0);
             }
         });
 
-        async function start() {
-            document.getElementById('boot-layer').style.display = 'none';
-            initEngine();
+        // --- 4. Boot Force Sequence ---
+        async function boot() {
+            document.getElementById('boot-overlay').style.display = 'none';
+            init3D();
             
-            // Native Camera Start
-            const stream = await navigator.mediaDevices.getUserMedia({ video: { width: 640, height: 480 } });
-            video.srcObject = stream;
+            try {
+                const stream = await navigator.mediaDevices.getUserMedia({ video: { width: 640, height: 480 } });
+                video.srcObject = stream;
+                
+                const camera = new Camera(video, {
+                    onFrame: async () => { await hands.send({image: video}); },
+                    width: 640, height: 480
+                });
+                camera.start();
 
-            const cam = new Camera(video, {
-                onFrame: async () => { await hands.send({image: video}); },
-                width: 640, height: 480
-            });
-            cam.start();
-            
-            function renderLoop() {
-                requestAnimationFrame(renderLoop);
-                const pa = points.geometry.attributes.position.array;
-                for (let i = 0; i < pCount * 3; i++) {
-                    pa[i] += (targetPositions[i] - pa[i]) * 0.15;
+                function animate() {
+                    requestAnimationFrame(animate);
+                    const pa = points.geometry.attributes.position.array;
+                    for (let i = 0; i < pCount * 3; i++) {
+                        pa[i] += (targetPositions[i] - pa[i]) * 0.15;
+                    }
+                    points.geometry.attributes.position.needsUpdate = true;
+                    points.rotation.y += 0.003 + (spinForce * 0.2);
+                    renderer.render(scene, camera);
                 }
-                points.geometry.attributes.position.needsUpdate = true;
-                points.rotation.y += 0.003 + (spinSpeed * 0.2);
-                renderer.render(scene, camera);
+                animate();
+            } catch (err) {
+                alert("Camera Blocked. Please check browser permissions.");
             }
-            renderLoop();
         }
 
-        startBtn.addEventListener('click', start);
+        startBtn.addEventListener('click', boot);
     </script>
 </body>
 </html>
