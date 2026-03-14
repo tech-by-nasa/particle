@@ -3,152 +3,183 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>High-Precision Kinetic Engine</title>
+    <title>Gesture Particle System</title>
     <style>
-        body { margin: 0; overflow: hidden; background: #000; font-family: 'Segoe UI', sans-serif; }
-        #debug-panel { position: absolute; top: 10px; left: 10px; background: rgba(0,0,0,0.85); color: #0f0; padding: 15px; border-radius: 8px; font-family: monospace; font-size: 12px; z-index: 100; border: 1px solid #333; pointer-events: none; }
-        #status-display { font-size: 18px; color: #fff; margin-bottom: 5px; }
-        canvas#webcam-preview { position: absolute; top: 10px; right: 10px; width: 160px; height: 120px; border: 1px solid #444; transform: scaleX(-1); border-radius: 4px; }
+        body { margin: 0; overflow: hidden; background: #000; font-family: sans-serif; }
+        canvas { display: block; }
+        
+        /* The "FaceTime" style camera box */
+        #video-container {
+            position: absolute;
+            bottom: 20px;
+            right: 20px;
+            width: 240px;
+            height: 180px;
+            border-radius: 12px;
+            overflow: hidden;
+            border: 2px solid rgba(255, 255, 255, 0.2);
+            box-shadow: 0 8px 32px rgba(0,0,0,0.5);
+            transform: scaleX(-1); /* Mirror the camera */
+        }
+        video { width: 100%; height: 100%; object-fit: cover; }
+        
+        #ui {
+            position: absolute;
+            top: 20px;
+            left: 20px;
+            color: white;
+            pointer-events: none;
+            text-shadow: 0 2px 4px rgba(0,0,0,0.5);
+        }
     </style>
 </head>
 <body>
 
-    <div id="debug-panel">
-        <div id="status-display">INITIALIZING AI...</div>
-        <div>Landmarks: <span id="landmark-count">0</span></div>
-        <div>Gesture: <span id="gesture-name">NONE</span></div>
-        <div style="color: #666; margin-top: 5px;">Mode: 100% Precision Refactor</div>
+    <div id="ui">
+        <h1>Hand Gesture Particles</h1>
+        <p>Open Palm: Expand | Pinch: Attract | Move Hand to Control</p>
     </div>
 
-    <video id="video" style="display:none" autoplay playsinline></video>
-    <canvas id="webcam-preview"></canvas>
+    <div id="video-container">
+        <video id="input-video"></video>
+    </div>
 
-    <script type="importmap">
-    { "imports": { "three": "https://unpkg.com/three@0.160.0/build/three.module.js" } }
-    </script>
+    <script src="https://cdn.jsdelivr.net/npm/three@0.150.1/build/three.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/hands/hands.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js"></script>
 
-    <script type="module">
-        import * as THREE from 'three';
-        import { HandLandmarker, FilesetResolver, DrawingUtils } from "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.0";
+    <script>
+        const videoElement = document.getElementById('input-video');
+        const particleCount = 10000;
+        let scene, camera, renderer, points, positions, colors;
+        let targetPositions = new Float32Array(particleCount * 3);
+        let currentMode = 'cloud';
 
-        let handLandmarker;
-        let video = document.getElementById('video');
-        let statusDisplay = document.getElementById('status-display');
-        let landmarkCount = document.getElementById('landmark-count');
-        let gestureName = document.getElementById('gesture-name');
-        
-        // THREE.JS Globals
-        let scene, camera, renderer, particles;
-        const PARTICLE_COUNT = 8000;
-        const posArray = new Float32Array(PARTICLE_COUNT * 3);
-        const colArray = new Float32Array(PARTICLE_COUNT * 3);
-
-        async function createHandLandmarker() {
-            try {
-                const vision = await FilesetResolver.forVisionTasks("https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.0/wasm");
-                handLandmarker = await HandLandmarker.createFromOptions(vision, {
-                    baseOptions: {
-                        modelAssetPath: "https://storage.googleapis.com/mediapipe-models/hand_landmarker/hand_landmarker/float16/1/hand_landmarker.task",
-                        delegate: "GPU"
-                    },
-                    runningMode: "VIDEO",
-                    numHands: 2,
-                    minHandDetectionConfidence: 0.5,
-                    minHandPresenceConfidence: 0.5,
-                    minTrackingConfidence: 0.5
-                });
-                statusDisplay.innerText = "AI ONLINE";
-                startCamera();
-            } catch (e) {
-                statusDisplay.innerText = "ERROR: WASM FAILED";
-                console.error(e);
-            }
-        }
-
-        async function startCamera() {
-            const constraints = { video: { width: 640, height: 480 } };
-            const stream = await navigator.mediaDevices.getUserMedia(constraints);
-            video.srcObject = stream;
-            video.addEventListener("loadeddata", predictWebcam);
-        }
-
-        let results = undefined;
-        async function predictWebcam() {
-            if (handLandmarker) {
-                const startTimeMs = performance.now();
-                results = handLandmarker.detectForVideo(video, startTimeMs);
-                
-                // Update Debug UI
-                if (results.landmarks) {
-                    landmarkCount.innerText = results.landmarks.length > 0 ? "DETECTED" : "0";
-                }
-            }
-            window.requestAnimationFrame(predictWebcam);
-        }
-
-        function initThree() {
+        // --- 1. Three.js Initialization ---
+        function initScene() {
             scene = new THREE.Scene();
             camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
-            camera.position.z = 10;
-            renderer = new THREE.WebGLRenderer();
+            camera.position.z = 5;
+
+            renderer = new THREE.WebGLRenderer({ antialias: true });
             renderer.setSize(window.innerWidth, window.innerHeight);
             document.body.appendChild(renderer.domElement);
 
             const geometry = new THREE.BufferGeometry();
-            for (let i = 0; i < PARTICLE_COUNT * 3; i++) posArray[i] = (Math.random() - 0.5) * 20;
-            geometry.setAttribute('position', new THREE.BufferAttribute(posArray, 3));
-            geometry.setAttribute('color', new THREE.BufferAttribute(colArray, 3));
-            
-            particles = new THREE.Points(geometry, new THREE.PointsMaterial({ size: 0.05, vertexColors: true }));
-            scene.add(particles);
-            animate();
+            positions = new Float32Array(particleCount * 3);
+            colors = new Float32Array(particleCount * 3);
+
+            for (let i = 0; i < particleCount; i++) {
+                positions[i * 3] = (Math.random() - 0.5) * 10;
+                positions[i * 3 + 1] = (Math.random() - 0.5) * 10;
+                positions[i * 3 + 2] = (Math.random() - 0.5) * 10;
+                
+                colors[i * 3] = Math.random();
+                colors[i * 3 + 1] = Math.random();
+                colors[i * 3 + 2] = 1.0;
+            }
+
+            geometry.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+            geometry.setAttribute('color', new THREE.BufferAttribute(colors, 3));
+
+            const material = new THREE.PointsMaterial({
+                size: 0.03,
+                vertexColors: true,
+                blending: THREE.AdditiveBlending,
+                transparent: true,
+                opacity: 0.8
+            });
+
+            points = new THREE.Points(geometry, material);
+            scene.add(points);
         }
 
+        // --- 2. Shape Generators ---
+        function setHeartShape() {
+            for (let i = 0; i < particleCount; i++) {
+                const t = Math.random() * Math.PI * 2;
+                const x = 0.15 * (16 * Math.pow(Math.sin(t), 3));
+                const y = 0.15 * (13 * Math.cos(t) - 5 * Math.cos(2 * t) - 2 * Math.cos(3 * t) - Math.cos(4 * t));
+                targetPositions[i * 3] = x;
+                targetPositions[i * 3 + 1] = y;
+                targetPositions[i * 3 + 2] = (Math.random() - 0.5) * 0.5;
+            }
+        }
+
+        // --- 3. Hand Tracking Logic ---
+        const hands = new Hands({
+            locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/hands/${file}`
+        });
+
+        hands.setOptions({
+            maxNumHands: 1,
+            modelComplexity: 1,
+            minDetectionConfidence: 0.7,
+            minTrackingConfidence: 0.7
+        });
+
+        hands.onResults((results) => {
+            if (results.multiHandLandmarks && results.multiHandLandmarks.length > 0) {
+                const landmarks = results.multiHandLandmarks[0];
+                
+                // Tip of Index Finger (Landmark 8)
+                const indexTip = landmarks[8];
+                const tx = (0.5 - indexTip.x) * 12; // Inverted for mirroring
+                const ty = (0.5 - indexTip.y) * 12;
+
+                // Simple Gesture: Distance between Thumb (4) and Index (8)
+                const dx = landmarks[4].x - landmarks[8].x;
+                const dy = landmarks[4].y - landmarks[8].y;
+                const dist = Math.sqrt(dx*dx + dy*dy);
+
+                // If pinching, move toward finger. If open, move to heart shape.
+                if (dist < 0.05) {
+                    for (let i = 0; i < particleCount; i++) {
+                        targetPositions[i * 3] = tx + (Math.random() - 0.5);
+                        targetPositions[i * 3 + 1] = ty + (Math.random() - 0.5);
+                        targetPositions[i * 3 + 2] = (Math.random() - 0.5);
+                    }
+                } else {
+                    setHeartShape();
+                }
+            }
+        });
+
+        const cameraFeed = new Camera(videoElement, {
+            onFrame: async () => {
+                await hands.send({ image: videoElement });
+            },
+            width: 640,
+            height: 480
+        });
+        cameraFeed.start();
+
+        // --- 4. Animation Loop ---
         function animate() {
             requestAnimationFrame(animate);
-            const pos = particles.geometry.attributes.position.array;
-            const col = particles.geometry.attributes.color.array;
 
-            let currentGesture = "IDLE";
-            let tx = 0, ty = 0;
-
-            if (results && results.landmarks && results.landmarks.length > 0) {
-                const hands = results.landmarks;
-                tx = (0.5 - hands[0][9].x) * 20;
-                ty = (0.5 - hands[0][9].y) * 15;
-
-                // DETECT PINCH (Saturn)
-                const d = (p1, p2) => Math.hypot(p1.x-p2.x, p1.y-p2.y);
-                const pinchDist = d(hands[0][4], hands[0][8]);
-                
-                if (hands.length === 2) {
-                    if (d(hands[0][8], hands[1][8]) < 0.1) currentGesture = "HEART";
-                    else if (d(hands[0][9], hands[1][9]) < 0.1) currentGesture = "CLAP";
-                } else {
-                    if (pinchDist < 0.05) currentGesture = "SATURN";
-                    else if (d(hands[0][0], hands[0][12]) > 0.4) currentGesture = "EXPAND";
-                }
+            const posAttr = points.geometry.attributes.position;
+            for (let i = 0; i < particleCount * 3; i++) {
+                // Lerp current position toward target position
+                posAttr.array[i] += (targetPositions[i] - posAttr.array[i]) * 0.1;
             }
+            posAttr.needsUpdate = true;
 
-            gestureName.innerText = currentGesture;
-
-            // Simple Logic for Particles
-            for (let i = 0; i < PARTICLE_COUNT; i++) {
-                const ix = i * 3;
-                if (currentGesture === "SATURN") {
-                    pos[ix] += (tx + Math.cos(i) * 2 - pos[ix]) * 0.1;
-                    pos[ix+1] += (ty + Math.sin(i) * 2 - pos[ix+1]) * 0.1;
-                } else {
-                    pos[ix] += (tx - pos[ix]) * 0.02;
-                    pos[ix+1] += (ty - pos[ix+1]) * 0.02;
-                }
-            }
-            particles.geometry.attributes.position.needsUpdate = true;
+            points.rotation.y += 0.005;
             renderer.render(scene, camera);
         }
 
-        initThree();
-        createHandLandmarker();
+        window.addEventListener('resize', () => {
+            camera.aspect = window.innerWidth / window.innerHeight;
+            camera.updateProjectionMatrix();
+            renderer.setSize(window.innerWidth, window.innerHeight);
+        });
+
+        initScene();
+        setHeartShape(); // Start with heart
+        animate();
     </script>
+</body>
+</html>
 </body>
 </html>
