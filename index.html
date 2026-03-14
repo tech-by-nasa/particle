@@ -3,66 +3,72 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Zenith Particle Engine - 60K Edition</title>
+    <title>Apex Particle Engine - 60K Final</title>
     <style>
         body { margin: 0; overflow: hidden; background: #000; color: #00ff00; font-family: 'Courier New', monospace; }
+        canvas { display: block; position: absolute; inset: 0; }
         #video-container { 
-            position: absolute; bottom: 20px; right: 20px; width: 220px; height: 160px; 
-            border: 1px solid #00ff00; border-radius: 8px; overflow: hidden; 
-            transform: scaleX(-1); background: #000; z-index: 1000; opacity: 0.8;
+            position: absolute; bottom: 30px; right: 30px; width: 240px; height: 180px; 
+            border: 2px solid #00ff00; border-radius: 15px; overflow: hidden; 
+            transform: scaleX(-1); background: #111; z-index: 1000;
         }
         video { width: 100%; height: 100%; object-fit: cover; }
         #hud { 
-            position: absolute; top: 20px; left: 20px; background: rgba(0, 10, 0, 0.85); 
-            padding: 15px; border-left: 4px solid #00ff00; z-index: 1000; pointer-events: none;
+            position: absolute; top: 30px; left: 30px; background: rgba(0, 10, 0, 0.9); 
+            padding: 20px; border: 1px solid #00ff00; z-index: 1000; pointer-events: none;
         }
-        .val { color: #fff; font-size: 1.1rem; font-weight: bold; text-shadow: 0 0 5px #00ff00; }
-        #boot {
+        .val { color: #fff; font-size: 1.2rem; font-weight: bold; }
+        #boot-layer {
             position: absolute; inset: 0; background: #000; display: flex; 
             flex-direction: column; align-items: center; justify-content: center; z-index: 9999;
         }
         #start-btn {
-            padding: 20px 50px; background: transparent; color: #00ff00; border: 2px solid #00ff00;
-            font-size: 1.5rem; cursor: pointer; border-radius: 50px; transition: 0.4s;
+            padding: 25px 60px; background: #00ff00; color: #000; border: none;
+            font-weight: 900; font-size: 1.5rem; cursor: pointer; border-radius: 5px;
+            box-shadow: 0 0 40px #00ff00;
         }
-        #start-btn:hover { background: #00ff00; color: #000; box-shadow: 0 0 30px #00ff00; }
     </style>
 </head>
 <body>
 
-    <div id="boot"><button id="start-btn">ENGAGE ZENITH AI</button></div>
+    <div id="boot-layer">
+        <h1 style="margin-bottom: 30px;">APEX ENGINE V7</h1>
+        <button id="start-btn">ENGAGE SYSTEM</button>
+    </div>
 
     <div id="hud">
-        <div style="font-size: 9px; color: #00ff00;">CONSTELLATION</div>
-        <div class="val" id="mode-ui">HEART</div>
-        <div style="font-size: 9px; color: #00ff00; margin-top: 8px;">ROTATION FORCE</div>
-        <div class="val" id="speed-ui">0.0</div>
+        <div>TEMPLATE: <span id="mode-ui" class="val">INITIALIZING</span></div>
+        <div>GESTURE: <span id="gest-ui" class="val">NONE</span></div>
+        <div>SPIN FORCE: <span id="speed-ui" class="val">0.0</span></div>
     </div>
 
     <div id="video-container"><video id="input-video" autoplay playsinline muted></video></div>
 
     <script src="https://cdn.jsdelivr.net/npm/three@0.150.1/build/three.min.js"></script>
-    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/hands/hands.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/hands@0.4.1646424915/hands.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils@0.4/camera_utils.js"></script>
 
     <script>
         const video = document.getElementById('input-video');
         const startBtn = document.getElementById('start-btn');
         const modeUI = document.getElementById('mode-ui');
+        const gestUI = document.getElementById('gest-ui');
         const speedUI = document.getElementById('speed-ui');
 
         let scene, camera, renderer, points, targetPositions;
-        const pCount = 60000; // DOUBLED PARTICLE COUNT
+        const pCount = 60000; 
         let currentMode = 0;
-        let spinForce = 0;
-        let lastHandX = 0.5;
-        const modes = ['HEART', 'SATURN_PRO', 'FOX_NEBULA', 'SKULL_VOID', 'ZODIAC_STAR', 'PLANET_X', 'FIREWORKS_MAX'];
+        let spinSpeed = 0;
+        let lastX = 0.5;
+        const modes = ['HEART', 'SATURN_PRO', 'FOX_NEBULA', 'SKULL_VOID', 'PLANET_X', 'GALAXY'];
 
-        function init3D() {
+        // --- 1. Engine Initialization ---
+        function initEngine() {
             scene = new THREE.Scene();
             camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
             camera.position.z = 25;
 
-            renderer = new THREE.WebGLRenderer({ antialias: false, alpha: true });
+            renderer = new THREE.WebGLRenderer({ antialias: false });
             renderer.setSize(window.innerWidth, window.innerHeight);
             document.body.appendChild(renderer.domElement);
 
@@ -72,73 +78,48 @@
             targetPositions = new Float32Array(pCount * 3);
 
             for (let i = 0; i < pCount; i++) {
-                cols[i*3] = 0.4 + Math.random() * 0.6; // High R
-                cols[i*3+1] = 0.1 + Math.random() * 0.4; // Med G
-                cols[i*3+2] = 0.8 + Math.random() * 0.2; // High B (Purple/Cyan mix)
+                cols[i*3] = Math.random(); cols[i*3+1] = 0.2; cols[i*3+2] = 1.0;
             }
 
             geo.setAttribute('position', new THREE.BufferAttribute(pos, 3));
             geo.setAttribute('color', new THREE.BufferAttribute(cols, 3));
             points = new THREE.Points(geo, new THREE.PointsMaterial({
-                size: 0.03, vertexColors: true, blending: THREE.AdditiveBlending, transparent: true, opacity: 0.8
+                size: 0.04, vertexColors: true, blending: THREE.AdditiveBlending, transparent: true
             }));
             scene.add(points);
         }
 
-        // --- Parametric Geometry Library ---
-        function setShape(mode, hX, hY, scale = 1.0) {
-            const name = modes[mode];
-            modeUI.innerText = name;
-
+        // --- 2. Advanced Geometry Logic ---
+        function generateTemplate(mode, hX, hY, scale = 1.0) {
+            modeUI.innerText = modes[mode];
             for (let i = 0; i < pCount; i++) {
                 let x = 0, y = 0, z = 0;
                 const idx = i * 3;
-                const t = (i / pCount);
+                const t = i / pCount;
 
-                if (name === 'HEART') {
-                    const angle = t * Math.PI * 2;
-                    x = 16 * Math.pow(Math.sin(angle), 3);
-                    y = 13 * Math.cos(angle) - 5 * Math.cos(2*angle) - 2 * Math.cos(3*angle) - Math.cos(4*angle);
-                    z = (Math.random() - 0.5) * 2;
-                } 
-                else if (name === 'SATURN_PRO') {
-                    if (i < pCount * 0.2) { // Dense Core
+                if (modes[mode] === 'HEART') {
+                    const a = t * Math.PI * 2;
+                    x = 16 * Math.pow(Math.sin(a), 3) * 0.7;
+                    y = (13 * Math.cos(a) - 5 * Math.cos(2*a) - 2 * Math.cos(3*a) - Math.cos(4*a)) * 0.7;
+                } else if (modes[mode] === 'SATURN_PRO') {
+                    if (i < pCount * 0.3) {
                         const u = Math.random() * Math.PI * 2, v = Math.random() * Math.PI;
                         x = 5 * Math.sin(v) * Math.cos(u); y = 5 * Math.sin(v) * Math.sin(u); z = 5 * Math.cos(v);
-                    } else { // Multi-layered Rings
-                        const a = Math.random() * Math.PI * 2;
-                        const r = 7 + Math.random() * 6;
-                        x = r * Math.cos(a); y = (r * Math.sin(a)) * (0.05 + Math.random() * 0.1); z = r * Math.sin(a);
+                    } else {
+                        const a = Math.random() * Math.PI * 2, r = 8 + Math.random() * 5;
+                        x = r * Math.cos(a); y = r * Math.sin(a) * 0.15; z = r * Math.sin(a);
                     }
-                }
-                else if (name === 'SKULL_VOID') {
+                } else if (modes[mode] === 'SKULL_VOID') {
                     const u = t * Math.PI * 2, v = Math.random() * Math.PI;
-                    x = 8 * Math.sin(v) * Math.cos(u);
-                    y = 11 * Math.cos(v);
-                    z = 7 * Math.sin(v) * Math.sin(u);
-                    if (y > 2 && Math.abs(x) < 3) { x *= 1.8; z *= 1.8; } // Hollow eyes
-                }
-                else if (name === 'FOX_NEBULA') {
-                    const angle = t * Math.PI * 20;
-                    const r = 10 * Math.exp(Math.cos(angle)) - 2 * Math.cos(4 * angle);
-                    x = r * Math.sin(angle); y = r * Math.cos(angle);
-                    z = (Math.random() - 0.5) * 10;
-                }
-                else if (name === 'PLANET_X') {
+                    x = 8 * Math.sin(v) * Math.cos(u); y = 11 * Math.cos(v); z = 7 * Math.sin(v) * Math.sin(u);
+                    if (y > 2 && Math.abs(x) < 3) { x *= 1.8; z *= 1.8; } 
+                } else if (modes[mode] === 'PLANET_X') {
                     const u = Math.random() * Math.PI * 2, v = Math.random() * Math.PI;
-                    const r = 10 + Math.sin(t * 50) * 1.5;
+                    const r = 10 + Math.sin(t * 100) * 1.2;
                     x = r * Math.sin(v) * Math.cos(u); y = r * Math.sin(v) * Math.sin(u); z = r * Math.cos(v);
-                }
-                else if (name === 'FIREWORKS_MAX') {
-                    const r = Math.pow(Math.random(), 0.1) * 25;
-                    const th = Math.random() * Math.PI * 2, ph = Math.random() * Math.PI;
-                    x = r * Math.sin(ph) * Math.cos(th); y = r * Math.sin(ph) * Math.sin(th); z = r * Math.cos(ph);
-                }
-                else { // ZODIAC
-                    const r = 12;
-                    const a = t * Math.PI * 2;
-                    x = r * Math.cos(a) + Math.sin(t * 100);
-                    y = r * Math.sin(a) + Math.cos(t * 100);
+                } else {
+                    const r = t * 15; const a = t * Math.PI * 20;
+                    x = r * Math.cos(a); y = r * Math.sin(a); z = Math.sin(t * 10) * 5;
                 }
 
                 targetPositions[idx] = (x * scale) + hX;
@@ -147,70 +128,68 @@
             }
         }
 
+        // --- 3. Stability Logic & Tracking ---
         const hands = new Hands({locateFile: (f) => `https://cdn.jsdelivr.net/npm/@mediapipe/hands/${f}`});
-        hands.setOptions({ maxNumHands: 1, modelComplexity: 1, minDetectionConfidence: 0.75 });
+        hands.setOptions({ maxNumHands: 1, modelComplexity: 1, minDetectionConfidence: 0.7, minTrackingConfidence: 0.7 });
 
         let lastSwitch = 0;
         hands.onResults((res) => {
             if (res.multiHandLandmarks && res.multiHandLandmarks[0]) {
                 const h = res.multiHandLandmarks[0];
-                const hX = (0.5 - h[9].x) * 55;
-                const hY = (0.5 - h[9].y) * 45;
+                const hX = (0.5 - h[9].x) * 50;
+                const hY = (0.5 - h[9].y) * 40;
 
-                // ROTATION GESTURE: Detect side-to-side hand speed
-                const deltaX = Math.abs(h[9].x - lastHandX);
-                spinForce = THREE.MathUtils.lerp(spinForce, deltaX * 25, 0.1);
-                speedUI.innerText = spinForce.toFixed(2);
-                lastHandX = h[9].x;
+                // Spin Calculation
+                spinSpeed = THREE.MathUtils.lerp(spinSpeed, Math.abs(h[9].x - lastX) * 30, 0.1);
+                speedUI.innerText = spinSpeed.toFixed(1);
+                lastX = h[9].x;
 
-                // SWITCH: Hand high depth or "Ok" pinch to cycle
+                // Mode Switching (Depth)
                 const depth = Math.hypot(h[0].x - h[9].x, h[0].y - h[9].y);
-                if (depth > 0.25 && Date.now() - lastSwitch > 2000) {
+                if (depth > 0.22 && Date.now() - lastSwitch > 2000) {
                     currentMode = (currentMode + 1) % modes.length;
                     lastSwitch = Date.now();
                 }
 
+                // Expand Gesture
                 const span = Math.hypot(h[4].x - h[20].x, h[4].y - h[20].y);
-                const scale = span > 0.2 ? 2.8 : 1.0;
+                const scale = span > 0.18 ? 2.5 : 1.0;
+                gestUI.innerText = span > 0.18 ? "EXPANDED" : "NORMAL";
 
-                setShape(currentMode, hX, hY, scale);
+                generateTemplate(currentMode, hX, hY, scale);
             } else {
-                setShape(currentMode, 0, 0, 1.0);
-                spinForce *= 0.98;
+                generateTemplate(currentMode, 0, 0, 1.0);
             }
         });
 
         async function start() {
-            document.getElementById('boot').style.display = 'none';
-            init3D();
-            const s = await navigator.mediaDevices.getUserMedia({video: {width: 640, height: 480}});
-            video.srcObject = s;
+            document.getElementById('boot-layer').style.display = 'none';
+            initEngine();
             
-            async function aiLoop() {
-                await hands.send({image: video});
-                requestAnimationFrame(aiLoop);
-            }
-            aiLoop();
+            // Native Camera Start
+            const stream = await navigator.mediaDevices.getUserMedia({ video: { width: 640, height: 480 } });
+            video.srcObject = stream;
+
+            const cam = new Camera(video, {
+                onFrame: async () => { await hands.send({image: video}); },
+                width: 640, height: 480
+            });
+            cam.start();
             
-            function render() {
-                requestAnimationFrame(render);
+            function renderLoop() {
+                requestAnimationFrame(renderLoop);
                 const pa = points.geometry.attributes.position.array;
                 for (let i = 0; i < pCount * 3; i++) {
-                    pa[i] += (targetPositions[i] - pa[i]) * 0.12;
+                    pa[i] += (targetPositions[i] - pa[i]) * 0.15;
                 }
                 points.geometry.attributes.position.needsUpdate = true;
-                points.rotation.y += 0.002 + (spinForce * 0.2); // ROTATION GESTURE SYNC
-                points.rotation.z += (spinForce * 0.1);
+                points.rotation.y += 0.003 + (spinSpeed * 0.2);
                 renderer.render(scene, camera);
             }
-            render();
+            renderLoop();
         }
 
         startBtn.addEventListener('click', start);
-        window.addEventListener('resize', () => {
-            camera.aspect = window.innerWidth / window.innerHeight; camera.updateProjectionMatrix();
-            renderer.setSize(window.innerWidth, window.innerHeight);
-        });
     </script>
 </body>
 </html>
