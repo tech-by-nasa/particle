@@ -3,35 +3,40 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Interactive Particle System - Gemini 3</title>
+    <title>Fluid Particles - M2 Optimized</title>
     <style>
-        body { margin: 0; overflow: hidden; background: #000; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; }
-        #ui { position: absolute; top: 20px; left: 20px; color: white; z-index: 10; pointer-events: none; text-shadow: 0 0 10px rgba(0,0,0,1); }
-        .hint { font-size: 0.9em; opacity: 0.8; background: rgba(0,0,0,0.5); padding: 10px; border-radius: 5px; }
-        canvas#webcam-preview { position: absolute; bottom: 20px; right: 20px; width: 180px; transform: scaleX(-1); border: 1px solid #555; border-radius: 10px; }
-        #status { color: #00ffcc; font-weight: bold; }
+        body { margin: 0; overflow: hidden; background: #000; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; }
+        #ui { position: absolute; top: 30px; left: 30px; color: white; z-index: 10; pointer-events: none; }
+        .card { background: rgba(255, 255, 255, 0.1); backdrop-filter: blur(10px); padding: 20px; border-radius: 15px; border: 1px solid rgba(255,255,255,0.2); width: 250px; }
+        .status-row { display: flex; align-items: center; margin-top: 10px; }
+        #indicator { width: 12px; height: 12px; border-radius: 50%; background: #ff4444; margin-right: 10px; box-shadow: 0 0 10px #ff4444; }
+        h1 { margin: 0; font-size: 1.2rem; letter-spacing: 1px; }
+        p { font-size: 0.85rem; opacity: 0.8; margin: 5px 0; }
+        canvas#webcam-preview { position: absolute; bottom: 20px; right: 20px; width: 160px; height: 120px; transform: scaleX(-1); border-radius: 10px; border: 1px solid rgba(255,255,255,0.3); }
     </style>
 </head>
 <body>
 
     <div id="ui">
-        <h1>Kinetic Particles</h1>
-        <div class="hint">
-            <p>Gesture: <span id="status">Initializing AI...</span></p>
-            <p>• <b>Pinch Index + Thumb:</b> Contract & Blue</p>
-            <p>• <b>Open Palm:</b> Expand & Gold</p>
-            <p>• <b>Move Hand:</b> Control Gravity & Swirl</p>
+        <div class="card">
+            <h1>Particle Kinetic</h1>
+            <div class="status-row">
+                <div id="indicator"></div>
+                <span id="status-text">Starting Camera...</span>
+            </div>
+            <hr style="border: 0; border-top: 1px solid rgba(255,255,255,0.1); margin: 15px 0;">
+            <p><b>Open Hand:</b> Expand (Gold)</p>
+            <p><b>Pinch:</b> Contract (Blue)</p>
+            <p><b>Two Hands:</b> (Soon!)</p>
         </div>
     </div>
 
     <video id="video" style="display:none" autoplay playsinline></video>
-    <canvas id="webcam-preview" style="display:none"></canvas>
+    <canvas id="webcam-preview"></canvas>
 
     <script type="importmap">
     {
-        "imports": {
-            "three": "https://unpkg.com/three@0.160.0/build/three.module.js"
-        }
+        "imports": { "three": "https://unpkg.com/three@0.160.0/build/three.module.js" }
     }
     </script>
 
@@ -39,155 +44,27 @@
         import * as THREE from 'three';
         import { HandLandmarker, FilesetResolver } from "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.0";
 
-        // --- Global Variables ---
         let scene, camera, renderer, particles;
         let handLandmarker;
         let video = document.getElementById('video');
+        let indicator = document.getElementById('indicator');
+        let statusText = document.getElementById('status-text');
+        
         let lastVideoTime = -1;
         let handData = null;
-        
-        const PARTICLE_COUNT = 8000;
+        let lerpTarget = { x: 0, y: 0, active: false };
+
+        const PARTICLE_COUNT = 6000;
         const posArray = new Float32Array(PARTICLE_COUNT * 3);
         const colorArray = new Float32Array(PARTICLE_COUNT * 3);
 
-        // --- 1. Initialize Scene ---
         async function init() {
+            // --- Scene Setup ---
             scene = new THREE.Scene();
-            camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
-            camera.position.z = 4;
+            camera = new THREE.PerspectiveCamera(60, window.innerWidth / window.innerHeight, 0.1, 1000);
+            camera.position.z = 6;
 
-            renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
-            renderer.setSize(window.innerWidth, window.innerHeight);
-            renderer.setPixelRatio(window.devicePixelRatio);
-            document.body.appendChild(renderer.domElement);
-
-            const geometry = new THREE.BufferGeometry();
-            
-            // Random Initial Position
-            for (let i = 0; i < PARTICLE_COUNT * 3; i++) {
-                posArray[i] = (Math.random() - 0.5) * 10;
-                colorArray[i] = Math.random();
-            }
-
-            geometry.setAttribute('position', new THREE.BufferAttribute(posArray, 3));
-            geometry.setAttribute('color', new THREE.BufferAttribute(colorArray, 3));
-            
-            const material = new THREE.PointsMaterial({
-                size: 0.025,
-                vertexColors: true,
-                transparent: true,
-                blending: THREE.AdditiveBlending,
-                depthWrite: false
-            });
-
-            particles = new THREE.Points(geometry, material);
-            scene.add(particles);
-
-            // Load AI Model
-            const vision = await FilesetResolver.forVisionTasks("https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.0/wasm");
-            handLandmarker = await HandLandmarker.createFromOptions(vision, {
-                baseOptions: { 
-                    modelAssetPath: `https://storage.googleapis.com/mediapipe-models/hand_landmarker/hand_landmarker/float16/1/hand_landmarker.task`,
-                    delegate: "GPU" 
-                },
-                runningMode: "VIDEO",
-                numHands: 1
-            });
-
-            startWebcam();
-            animate();
-        }
-
-        async function startWebcam() {
-            const constraints = { video: { width: 1280, height: 720 } };
-            const stream = await navigator.mediaDevices.getUserMedia(constraints);
-            video.srcObject = stream;
-            video.onloadeddata = () => {
-                document.getElementById('status').innerText = "Ready - Show your hand";
-                predict();
-            };
-        }
-
-        // --- 2. Hand Logic ---
-        async function predict() {
-            if (video.currentTime !== lastVideoTime) {
-                lastVideoTime = video.currentTime;
-                if (handLandmarker) {
-                    const results = handLandmarker.detectForVideo(video, performance.now());
-                    handData = (results.landmarks && results.landmarks.length > 0) ? results.landmarks[0] : null;
-                }
-            }
-            requestAnimationFrame(predict);
-        }
-
-        function getGesture(landmarks) {
-            const thumbTip = landmarks[4];
-            const indexTip = landmarks[8];
-            const middleTip = landmarks[12];
-            const wrist = landmarks[0];
-
-            const dist = (p1, p2) => Math.hypot(p1.x - p2.x, p1.y - p2.y);
-            
-            if (dist(thumbTip, indexTip) < 0.04) return "PINCH"; 
-            if (dist(wrist, middleTip) > 0.45) return "OPEN";
-            return "MOVE";
-        }
-
-        // --- 3. Animation Loop ---
-        function animate() {
-            requestAnimationFrame(animate);
-
-            const positions = particles.geometry.attributes.position.array;
-            const colors = particles.geometry.attributes.color.array;
-            
-            if (handData) {
-                const gesture = getGesture(handData);
-                document.getElementById('status').innerText = gesture;
-
-                // Center of the hand in 3D space
-                const tx = (0.5 - handData[9].x) * 8;
-                const ty = (0.5 - handData[9].y) * 5;
-
-                for (let i = 0; i < PARTICLE_COUNT; i++) {
-                    const ix = i * 3, iy = i * 3 + 1, iz = i * 3 + 2;
-
-                    // Standard behavior: Follow hand with slight lag
-                    positions[ix] += (tx - positions[ix]) * 0.015 + (Math.random() - 0.5) * 0.02;
-                    positions[iy] += (ty - positions[iy]) * 0.015 + (Math.random() - 0.5) * 0.02;
-
-                    if (gesture === "PINCH") {
-                        // Rapid contraction + Electric Blue
-                        positions[ix] *= 0.97;
-                        positions[iy] *= 0.97;
-                        colors[ix] *= 0.9; colors[iy] *= 0.95; colors[iz] = 1.0;
-                    } else if (gesture === "OPEN") {
-                        // Explosion + Gold/Red
-                        positions[ix] += (positions[ix] - tx) * 0.05;
-                        positions[iy] += (positions[iy] - ty) * 0.05;
-                        colors[ix] = 1.0; colors[iy] = 0.8; colors[iz] = 0.2;
-                    } else {
-                        // Default Drift + Subtle color shift
-                        colors[ix] += (0.5 - colors[ix]) * 0.01;
-                        colors[iy] += (1.0 - colors[iy]) * 0.01;
-                    }
-                }
-            } else {
-                document.getElementById('status').innerText = "Hand not detected";
-                // Gentle idle rotation
-                particles.rotation.y += 0.002;
-            }
-
-            particles.geometry.attributes.position.needsUpdate = true;
-            particles.geometry.attributes.color.needsUpdate = true;
-            renderer.render(scene, camera);
-        }
-
-        // Handle Resizing
-        window.addEventListener('resize', () => {
-            camera.aspect = window.innerWidth / window.innerHeight;
-            camera.updateProjectionMatrix();
-            renderer.setSize(window.innerWidth, window.innerHeight);
-        });
+            renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: "high-performance" });
 
         init();
     </script>
