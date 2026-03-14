@@ -65,8 +65,156 @@
             camera.position.z = 6;
 
             renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: "high-performance" });
+            renderer.setSize(window.innerWidth, window.innerHeight);
+            renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+            document.body.appendChild(renderer.domElement);
+
+            const geometry = new THREE.BufferGeometry();
+            for (let i = 0; i < PARTICLE_COUNT * 3; i++) {
+                posArray[i] = (Math.random() - 0.5) * 12;
+                colorArray[i] = Math.random();
+            }
+            geometry.setAttribute('position', new THREE.BufferAttribute(posArray, 3));
+            geometry.setAttribute('color', new THREE.BufferAttribute(colorArray, 3));
+            
+            const material = new THREE.PointsMaterial({
+                size: 0.04,
+                vertexColors: true,
+                transparent: true,
+                blending: THREE.AdditiveBlending,
+                opacity: 0.7
+            });
+
+            particles = new THREE.Points(geometry, material);
+            scene.add(particles);
+
+            // --- AI Setup ---
+            const vision = await FilesetResolver.forVisionTasks("https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.0/wasm");
+            handLandmarker = await HandLandmarker.createFromOptions(vision, {
+                baseOptions: { 
+                    modelAssetPath: `https://storage.googleapis.com/mediapipe-models/hand_landmarker/hand_landmarker/float16/1/hand_landmarker.task`,
+                    delegate: "GPU" 
+                },
+                runningMode: "VIDEO",
+                numHands: 1
+            });
+
+            startWebcam();
+            animate();
+        }
+
+        async function startWebcam() {
+            try {
+                const stream = await navigator.mediaDevices.getUserMedia({ video: { width: 640, height: 480 } });
+                video.srcObject = stream;
+                video.onloadeddata = () => {
+                    statusText.innerText = "No Hand Detected";
+                    predict();
+                };
+            } catch (err) {
+                statusText.innerText = "Camera Error";
+            }
+        }
+
+        async function predict() {
+            if (video.currentTime !== lastVideoTime) {
+                lastVideoTime = video.currentTime;
+                const results = handLandmarker.detectForVideo(video, performance.now());
+                if (results.landmarks && results.landmarks.length > 0) {
+                    handData = results.landmarks[0];
+                    indicator.style.background = "#00ffcc";
+                    indicator.style.boxShadow = "0 0 10px #00ffcc";
+                    lerpTarget.active = true;
+                } else {
+                    handData = null;
+                    indicator.style.background = "#ff4444";
+                    indicator.style.boxShadow = "0 0 10px #ff4444";
+                    lerpTarget.active = false;
+                }
+            }
+            requestAnimationFrame(predict);
+        }
+
+        function animate() {
+            requestAnimationFrame(animate);
+
+            const positions = particles.geometry.attributes.position.array;
+            const colors = particles.geometry.attributes.color.array;
+            const time = performance.now() * 0.001;
+
+            let gesture = "NONE";
+            let tx = 0, ty = 0;
+
+            if (handData) {
+                // Smoothing the hand movement
+                tx = (0.5 - handData[9].x) * 12;
+                ty = (0.5 - handData[9].y) * 8;
+                
+                // Sensitivity Thresholds
+                const thumb = handData[4];
+                const index = handData[8];
+                const middle = handData[12];
+                const wrist = handData[0];
+                const d = (p1, p2) => Math.hypot(p1.x-p2.x, p1.y-p2.y);
+                
+                if (d(thumb, index) < 0.06) gesture = "PINCH";
+                else if (d(wrist, middle) > 0.4) gesture = "OPEN";
+                else gesture = "MOVE";
+                
+                statusText.innerText = gesture;
+            } else {
+                statusText.innerText = "Looking for hand...";
+            }
+
+            for (let i = 0; i < PARTICLE_COUNT; i++) {
+                const ix = i * 3, iy = i * 3 + 1, iz = i * 3 + 2;
+
+                // 1. Idle Motion (sine wave drift) so it never looks frozen
+                positions[ix] += Math.sin(time + i) * 0.002;
+                positions[iy] += Math.cos(time + i) * 0.002;
+
+                if (handData) {
+                    // 2. Attraction to hand
+                    positions[ix] += (tx - positions[ix]) * 0.02;
+                    positions[iy] += (ty - positions[iy]) * 0.02;
+
+                    // 3. Gesture Physics
+                    if (gesture === "PINCH") {
+                        positions[ix] *= 0.96; positions[iy] *= 0.96;
+                        colors[ix] = 0.2; colors[iy] = 0.4; colors[iz] = 1.0; // Blue
+                    } else if (gesture === "OPEN") {
+                        positions[ix] += (positions[ix] - tx) * 0.08;
+                        positions[iy] += (positions[iy] - ty) * 0.08;
+                        colors[ix] = 1.0; colors[iy] = 0.7; colors[iz] = 0.1; // Gold
+                    } else {
+                        // Soft fade back to white/pink
+                        colors[ix] += (0.8 - colors[ix]) * 0.05;
+                        colors[iy] += (0.8 - colors[iy]) * 0.05;
+                        colors[iz] += (1.0 - colors[iz]) * 0.05;
+                    }
+                }
+            }
+
+            particles.geometry.attributes.position.needsUpdate = true;
+            particles.geometry.attributes.color.needsUpdate = true;
+            
+            // Camera subtle tilt
+            camera.position.x += (tx/5 - camera.position.x) * 0.05;
+            camera.lookAt(0,0,0);
+
+            renderer.render(scene, camera);
+        }
+
+        window.addEventListener('resize', () => {
+            camera.aspect = window.innerWidth / window.innerHeight;
+            camera.updateProjectionMatrix();
+            renderer.setSize(window.innerWidth, window.innerHeight);
+        });
 
         init();
+    </script>
+</body>
+</html>
     </script>
 </body>
 </html>
