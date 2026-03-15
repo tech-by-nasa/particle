@@ -3,21 +3,20 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Advanced 3D Particle AI</title>
+    <title>AI Gesture Particle Command</title>
     <style>
         body { margin: 0; overflow: hidden; background: #000; color: #00ff00; font-family: 'Courier New', monospace; }
         #video-container { 
             position: absolute; bottom: 20px; right: 20px; width: 220px; height: 160px; 
             border: 2px solid #00ff00; border-radius: 12px; overflow: hidden; 
-            transform: scaleX(-1); background: #111; z-index: 1000; opacity: 0.7;
+            transform: scaleX(-1); background: #111; z-index: 1000; opacity: 0.5;
         }
         video { width: 100%; height: 100%; object-fit: cover; }
         #hud { 
-            position: absolute; top: 20px; left: 20px; background: rgba(0, 20, 0, 0.8); 
-            padding: 15px; border: 1px solid #00ff00; z-index: 1000; pointer-events: none;
-            text-transform: uppercase; letter-spacing: 2px;
+            position: absolute; top: 20px; left: 20px; background: rgba(0, 10, 0, 0.85); 
+            padding: 20px; border: 1px solid #00ff00; z-index: 1000; pointer-events: none;
         }
-        .val { color: #fff; font-weight: bold; text-shadow: 0 0 5px #00ff00; }
+        .val { color: #fff; font-weight: bold; text-shadow: 0 0 8px #00ff00; }
         #boot-screen {
             position: absolute; inset: 0; background: #000; display: flex; 
             flex-direction: column; align-items: center; justify-content: center; z-index: 9999;
@@ -25,23 +24,22 @@
         #start-btn {
             padding: 20px 50px; background: transparent; color: #00ff00; border: 2px solid #00ff00;
             font-weight: 900; font-size: 1.5rem; cursor: pointer; border-radius: 4px;
-            transition: 0.3s;
         }
-        #start-btn:hover { background: #00ff00; color: #000; box-shadow: 0 0 50px #00ff00; }
+        .gesture-hint { font-size: 0.8rem; color: #888; margin-top: 5px; }
     </style>
 </head>
 <body>
 
 <div id="boot-screen">
-    <h1 style="margin-bottom: 30px;">NEURAL PARTICLE ENGINE v2.0</h1>
-    <button id="start-btn">INITIALIZE SYSTEM</button>
+    <h1 style="margin-bottom: 20px;">GESTURE INTERFACE v3.0</h1>
+    <button id="start-btn">INITIALIZE HAND TRACKING</button>
 </div>
 
 <div id="hud">
-    <div>SYSTEM: <span class="val">ACTIVE</span></div>
-    <div>GEOMETRY: <span id="mode-ui" class="val">HEART</span></div>
-    <div>TRACKING: <span id="status-ui" class="val" style="color:red">OFFLINE</span></div>
-    <div style="font-size: 0.8rem; margin-top: 10px; color: #888;">CLICK SCREEN TO CHANGE SHAPE</div>
+    <div>HANDS DETECTED: <span id="hand-count" class="val">0</span></div>
+    <div>ACTIVE GEOMETRY: <span id="mode-ui" class="val">HEART</span></div>
+    <div class="gesture-hint">Open Palm: Cycle Shape</div>
+    <div class="gesture-hint">Two Hands: Expand System</div>
 </div>
 
 <div id="video-container"><video id="input-video" autoplay playsinline muted></video></div>
@@ -52,13 +50,17 @@
 <script>
     const video = document.getElementById('input-video');
     const startBtn = document.getElementById('start-btn');
-    const statusUI = document.getElementById('status-ui');
     const modeUI = document.getElementById('mode-ui');
+    const handCountUI = document.getElementById('hand-count');
 
     let scene, camera, renderer, particles, targetPositions;
-    const pCount = 20000; // Increased particle density
+    const pCount = 15000; 
     let currentMode = 0;
     const modes = ['HEART', 'FLOWERS', 'SATURN', 'FIREWORKS', 'DNA', 'GALAXY', 'TORUS', 'SPHERE'];
+    
+    // Gesture state
+    let lastGestureTime = 0;
+    let isHandOpen = false;
 
     function init3D() {
         scene = new THREE.Scene();
@@ -76,111 +78,64 @@
 
         const color = new THREE.Color();
         for (let i = 0; i < pCount; i++) {
-            color.setHSL(Math.random(), 0.8, 0.5);
+            color.setHSL((i / pCount) * 0.2 + 0.4, 0.8, 0.5); // Matrix-style greens/teals
             cols[i * 3] = color.r;
             cols[i * 3 + 1] = color.g;
             cols[i * 3 + 2] = color.b;
+            // Start particles off-screen
+            pos[i*3] = (Math.random() - 0.5) * 200;
+            pos[i*3+1] = (Math.random() - 0.5) * 200;
+            pos[i*3+2] = (Math.random() - 0.5) * 200;
         }
 
         geo.setAttribute('position', new THREE.BufferAttribute(pos, 3));
         geo.setAttribute('color', new THREE.BufferAttribute(cols, 3));
-        
-        const mat = new THREE.PointsMaterial({ 
-            size: 0.08, 
-            vertexColors: true, 
-            blending: THREE.AdditiveBlending, 
-            transparent: true,
-            opacity: 0.8
-        });
-        
-        particles = new THREE.Points(geo, mat);
+        particles = new THREE.Points(geo, new THREE.PointsMaterial({ size: 0.1, vertexColors: true, blending: THREE.AdditiveBlending, transparent: true }));
         scene.add(particles);
     }
 
     function setShape(modeIdx, hX, hY, scale = 1.0) {
-        const mode = modes[modeIdx];
-        modeUI.innerText = mode;
-
+        modeUI.innerText = modes[modeIdx];
         for (let i = 0; i < pCount; i++) {
             const idx = i * 3;
             const t = (i / pCount);
             const angle = t * Math.PI * 2;
             let x = 0, y = 0, z = 0;
 
-            switch (mode) {
+            switch (modes[modeIdx]) {
                 case 'HEART':
                     const th = t * Math.PI * 2;
                     x = 16 * Math.pow(Math.sin(th), 3);
                     y = (13 * Math.cos(th) - 5 * Math.cos(2 * th) - 2 * Math.cos(3 * th) - Math.cos(4 * th));
                     break;
-
                 case 'FLOWERS':
-                    const petal = 5;
-                    const r = 15 * Math.sin(angle * petal);
-                    x = r * Math.cos(angle);
-                    y = r * Math.sin(angle);
-                    z = Math.sin(angle * 10) * 2;
+                    const r = 15 * Math.sin(angle * 5);
+                    x = r * Math.cos(angle); y = r * Math.sin(angle);
                     break;
-
                 case 'SATURN':
-                    if (i < pCount * 0.4) { // The Planet
-                        const phi = Math.acos(-1 + (2 * i) / (pCount * 0.4));
-                        const theta = Math.sqrt(pCount * 0.4 * Math.PI) * phi;
+                    if (i < pCount * 0.5) {
+                        const phi = Math.acos(-1 + (2 * i) / (pCount * 0.5));
+                        const theta = Math.sqrt(pCount * 0.5 * Math.PI) * phi;
                         x = 10 * Math.cos(theta) * Math.sin(phi);
                         y = 10 * Math.sin(theta) * Math.sin(phi);
                         z = 10 * Math.cos(phi);
-                    } else { // The Ring
-                        const ringR = 15 + Math.random() * 8;
-                        const ringA = Math.random() * Math.PI * 2;
-                        x = ringR * Math.cos(ringA);
-                        y = (Math.random() - 0.5) * 2;
-                        z = ringR * Math.sin(ringA);
+                    } else {
+                        const rr = 18 + Math.random() * 5;
+                        x = rr * Math.cos(angle * 10); z = rr * Math.sin(angle * 10);
                     }
                     break;
-
-                case 'FIREWORKS':
-                    const burst = Math.floor(i / 1000);
-                    const localT = (i % 1000) / 1000;
-                    const speed = 15 + Math.random() * 10;
-                    x = Math.cos(localT * Math.PI * 2) * Math.sin(burst) * speed;
-                    y = Math.sin(localT * Math.PI * 2) * Math.sin(burst) * speed;
-                    z = Math.cos(burst) * speed;
-                    break;
-
                 case 'DNA':
-                    const helixH = 40;
-                    const twist = 4;
-                    const side = i % 2 === 0 ? 1 : -1;
-                    y = (t - 0.5) * helixH;
-                    x = Math.cos(y * 0.5 + (side > 0 ? 0 : Math.PI)) * 10;
-                    z = Math.sin(y * 0.5 + (side > 0 ? 0 : Math.PI)) * 10;
+                    y = (t - 0.5) * 40;
+                    const phase = i % 2 === 0 ? 0 : Math.PI;
+                    x = Math.cos(y * 0.4 + phase) * 10;
+                    z = Math.sin(y * 0.4 + phase) * 10;
                     break;
-
-                case 'GALAXY':
-                    const arm = i % 3;
-                    const dist = Math.random() * 25;
-                    const spiral = dist * 0.5;
-                    x = Math.cos(spiral + (arm * Math.PI * 2 / 3)) * dist;
-                    z = Math.sin(spiral + (arm * Math.PI * 2 / 3)) * dist;
-                    y = (Math.random() - 0.5) * (10 / (dist + 1));
-                    break;
-
-                case 'TORUS':
-                    const outerR = 15, innerR = 7;
-                    const u = Math.random() * Math.PI * 2;
-                    const v = Math.random() * Math.PI * 2;
-                    x = (outerR + innerR * Math.cos(v)) * Math.cos(u);
-                    y = (outerR + innerR * Math.cos(v)) * Math.sin(u);
-                    z = innerR * Math.sin(v);
-                    break;
-
-                case 'SPHERE':
+                default: // Sphere for others
                     const sPhi = Math.acos(-1 + (2 * i) / pCount);
                     const sTheta = Math.sqrt(pCount * Math.PI) * sPhi;
                     x = 20 * Math.cos(sTheta) * Math.sin(sPhi);
                     y = 20 * Math.sin(sTheta) * Math.sin(sPhi);
                     z = 20 * Math.cos(sPhi);
-                    break;
             }
             targetPositions[idx] = (x * scale) + hX;
             targetPositions[idx + 1] = (y * scale) + hY;
@@ -189,34 +144,47 @@
     }
 
     const hands = new Hands({ locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/hands/${file}` });
-    hands.setOptions({ maxNumHands: 1, modelComplexity: 1, minDetectionConfidence: 0.6 });
+    hands.setOptions({ maxNumHands: 2, modelComplexity: 1, minDetectionConfidence: 0.7 });
 
     hands.onResults((res) => {
-        if (res.multiHandLandmarks && res.multiHandLandmarks[0]) {
-            statusUI.innerText = "ONLINE"; statusUI.style.color = "#00ff00";
-            const h = res.multiHandLandmarks[0];
-            const hX = (0.5 - h[9].x) * 60;
-            const hY = (0.5 - h[9].y) * 50;
-            const span = Math.hypot(h[4].x - h[20].x, h[4].y - h[20].y);
-            setShape(currentMode, hX, hY, span > 0.18 ? 2.2 : 1.0);
+        const count = res.multiHandLandmarks ? res.multiHandLandmarks.length : 0;
+        handCountUI.innerText = count;
+
+        if (count > 0) {
+            let centerX = 0, centerY = 0, finalScale = 1.0;
+            const h1 = res.multiHandLandmarks[0];
+
+            // Gesture logic: Check if hand is "Open" (fingertips above pips)
+            const isOpen = h1[8].y < h1[6].y && h1[12].y < h1[10].y;
+            if (isOpen && Date.now() - lastGestureTime > 1000) {
+                currentMode = (currentMode + 1) % modes.length;
+                lastGestureTime = Date.now();
+            }
+
+            if (count === 2) {
+                const h2 = res.multiHandLandmarks[1];
+                centerX = (0.5 - (h1[9].x + h2[9].x) / 2) * 60;
+                centerY = (0.5 - (h1[9].y + h2[9].y) / 2) * 50;
+                const dist = Math.hypot(h1[9].x - h2[9].x, h1[9].y - h2[9].y);
+                finalScale = dist * 4; // Expand based on hand distance
+            } else {
+                centerX = (0.5 - h1[9].x) * 60;
+                centerY = (0.5 - h1[9].y) * 50;
+                const fingerSpan = Math.hypot(h1[4].x - h1[20].x, h1[4].y - h1[20].y);
+                finalScale = fingerSpan > 0.15 ? 2.0 : 1.0;
+            }
+            setShape(currentMode, centerX, centerY, finalScale);
         } else {
-            statusUI.innerText = "SEARCHING"; statusUI.style.color = "orange";
-            setShape(currentMode, 0, 0, 1.0);
+            setShape(currentMode, 0, 0, 0.5); // Contract when no hands
         }
     });
 
     async function forceStart() {
         document.getElementById('boot-screen').style.display = 'none';
         init3D();
-        
-        window.addEventListener('mousedown', () => {
-            currentMode = (currentMode + 1) % modes.length;
-        });
-
         try {
             const stream = await navigator.mediaDevices.getUserMedia({ video: true });
             video.srcObject = stream;
-            
             const tick = async () => {
                 if (video.readyState >= 2) await hands.send({ image: video });
                 requestAnimationFrame(tick);
@@ -226,25 +194,16 @@
             function render() {
                 requestAnimationFrame(render);
                 const pa = particles.geometry.attributes.position.array;
-                for (let i = 0; i < pCount * 3; i++) {
-                    pa[i] += (targetPositions[i] - pa[i]) * 0.08; // Smoother lerp
-                }
+                for (let i = 0; i < pCount * 3; i++) pa[i] += (targetPositions[i] - pa[i]) * 0.1;
                 particles.geometry.attributes.position.needsUpdate = true;
                 particles.rotation.y += 0.005;
                 renderer.render(scene, camera);
             }
             render();
-        } catch (e) { alert("Access Denied: " + e.message); }
+        } catch (e) { alert("Camera Error: " + e.message); }
     }
 
     startBtn.addEventListener('click', forceStart);
-    window.addEventListener('resize', () => {
-        camera.aspect = window.innerWidth / window.innerHeight;
-        camera.updateProjectionMatrix();
-        renderer.setSize(window.innerWidth, window.innerHeight);
-    });
 </script>
-</body>
-</html>
 </body>
 </html>
