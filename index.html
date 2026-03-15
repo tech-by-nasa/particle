@@ -3,17 +3,17 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>AI Gesture Particle Command</title>
+    <title>Quantum Gesture Particle Engine</title>
     <style>
         body { margin: 0; overflow: hidden; background: #000; color: #00ff00; font-family: 'Courier New', monospace; }
         #video-container { 
             position: absolute; bottom: 20px; right: 20px; width: 220px; height: 160px; 
             border: 2px solid #00ff00; border-radius: 12px; overflow: hidden; 
-            transform: scaleX(-1); background: #111; z-index: 1000; opacity: 0.5;
+            transform: scaleX(-1); background: #111; z-index: 1000; opacity: 0.4;
         }
         video { width: 100%; height: 100%; object-fit: cover; }
         #hud { 
-            position: absolute; top: 20px; left: 20px; background: rgba(0, 10, 0, 0.85); 
+            position: absolute; top: 20px; left: 20px; background: rgba(0, 10, 0, 0.9); 
             padding: 20px; border: 1px solid #00ff00; z-index: 1000; pointer-events: none;
         }
         .val { color: #fff; font-weight: bold; text-shadow: 0 0 8px #00ff00; }
@@ -25,21 +25,20 @@
             padding: 20px 50px; background: transparent; color: #00ff00; border: 2px solid #00ff00;
             font-weight: 900; font-size: 1.5rem; cursor: pointer; border-radius: 4px;
         }
-        .gesture-hint { font-size: 0.8rem; color: #888; margin-top: 5px; }
+        .status-light { display: inline-block; width: 10px; height: 10px; border-radius: 50%; background: red; margin-right: 5px; }
     </style>
 </head>
 <body>
 
 <div id="boot-screen">
-    <h1 style="margin-bottom: 20px;">GESTURE INTERFACE v3.0</h1>
-    <button id="start-btn">INITIALIZE HAND TRACKING</button>
+    <h1 style="margin-bottom: 20px;">QUANTUM GESTURE ENGINE v4.0</h1>
+    <button id="start-btn">ENGAGE SYSTEMS</button>
 </div>
 
 <div id="hud">
-    <div>HANDS DETECTED: <span id="hand-count" class="val">0</span></div>
-    <div>ACTIVE GEOMETRY: <span id="mode-ui" class="val">HEART</span></div>
-    <div class="gesture-hint">Open Palm: Cycle Shape</div>
-    <div class="gesture-hint">Two Hands: Expand System</div>
+    <div>GEOMETRY: <span id="mode-ui" class="val">INITIALIZING</span></div>
+    <div>PARTICLES: <span class="val">45,000</span></div>
+    <div>GESTURE: <span id="gesture-ui" class="val">SCANNING</span></div>
 </div>
 
 <div id="video-container"><video id="input-video" autoplay playsinline muted></video></div>
@@ -51,23 +50,22 @@
     const video = document.getElementById('input-video');
     const startBtn = document.getElementById('start-btn');
     const modeUI = document.getElementById('mode-ui');
-    const handCountUI = document.getElementById('hand-count');
+    const gestureUI = document.getElementById('gesture-ui');
 
     let scene, camera, renderer, particles, targetPositions;
-    const pCount = 15000; 
+    const pCount = 45000; // Expanded to 45k
     let currentMode = 0;
-    const modes = ['HEART', 'FLOWERS', 'SATURN', 'FIREWORKS', 'DNA', 'GALAXY', 'TORUS', 'SPHERE'];
+    const modes = ['HEART', 'DNA', 'SATURN', 'FIREWORKS', 'FLOWER', 'GALAXY', 'SPHERE', 'TORUS'];
     
-    // Gesture state
-    let lastGestureTime = 0;
-    let isHandOpen = false;
+    let spinSpeed = 0.01;
+    let lastSwitch = 0;
 
     function init3D() {
         scene = new THREE.Scene();
         camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
-        camera.position.z = 60;
+        camera.position.z = 70;
 
-        renderer = new THREE.WebGLRenderer({ antialias: true });
+        renderer = new THREE.WebGLRenderer({ antialias: false }); // Disable for 45k performance
         renderer.setSize(window.innerWidth, window.innerHeight);
         document.body.appendChild(renderer.domElement);
 
@@ -78,19 +76,14 @@
 
         const color = new THREE.Color();
         for (let i = 0; i < pCount; i++) {
-            color.setHSL((i / pCount) * 0.2 + 0.4, 0.8, 0.5); // Matrix-style greens/teals
-            cols[i * 3] = color.r;
-            cols[i * 3 + 1] = color.g;
-            cols[i * 3 + 2] = color.b;
-            // Start particles off-screen
-            pos[i*3] = (Math.random() - 0.5) * 200;
-            pos[i*3+1] = (Math.random() - 0.5) * 200;
-            pos[i*3+2] = (Math.random() - 0.5) * 200;
+            color.setHSL((i / pCount) * 0.1 + 0.5, 0.9, 0.5); 
+            cols[i * 3] = color.r; cols[i * 3 + 1] = color.g; cols[i * 3 + 2] = color.b;
+            pos[i*3] = (Math.random()-0.5)*200; pos[i*3+1] = (Math.random()-0.5)*200; pos[i*3+2] = (Math.random()-0.5)*200;
         }
 
         geo.setAttribute('position', new THREE.BufferAttribute(pos, 3));
         geo.setAttribute('color', new THREE.BufferAttribute(cols, 3));
-        particles = new THREE.Points(geo, new THREE.PointsMaterial({ size: 0.1, vertexColors: true, blending: THREE.AdditiveBlending, transparent: true }));
+        particles = new THREE.Points(geo, new THREE.PointsMaterial({ size: 0.06, vertexColors: true, blending: THREE.AdditiveBlending, transparent: true }));
         scene.add(particles);
     }
 
@@ -99,47 +92,53 @@
         for (let i = 0; i < pCount; i++) {
             const idx = i * 3;
             const t = (i / pCount);
-            const angle = t * Math.PI * 2;
+            const a = t * Math.PI * 2;
             let x = 0, y = 0, z = 0;
 
             switch (modes[modeIdx]) {
                 case 'HEART':
-                    const th = t * Math.PI * 2;
-                    x = 16 * Math.pow(Math.sin(th), 3);
-                    y = (13 * Math.cos(th) - 5 * Math.cos(2 * th) - 2 * Math.cos(3 * th) - Math.cos(4 * th));
-                    break;
-                case 'FLOWERS':
-                    const r = 15 * Math.sin(angle * 5);
-                    x = r * Math.cos(angle); y = r * Math.sin(angle);
-                    break;
-                case 'SATURN':
-                    if (i < pCount * 0.5) {
-                        const phi = Math.acos(-1 + (2 * i) / (pCount * 0.5));
-                        const theta = Math.sqrt(pCount * 0.5 * Math.PI) * phi;
-                        x = 10 * Math.cos(theta) * Math.sin(phi);
-                        y = 10 * Math.sin(theta) * Math.sin(phi);
-                        z = 10 * Math.cos(phi);
-                    } else {
-                        const rr = 18 + Math.random() * 5;
-                        x = rr * Math.cos(angle * 10); z = rr * Math.sin(angle * 10);
-                    }
+                    x = 16 * Math.pow(Math.sin(a), 3);
+                    y = (13 * Math.cos(a) - 5 * Math.cos(2*a) - 2 * Math.cos(3*a) - Math.cos(4*a));
                     break;
                 case 'DNA':
-                    y = (t - 0.5) * 40;
+                    y = (t - 0.5) * 50;
                     const phase = i % 2 === 0 ? 0 : Math.PI;
-                    x = Math.cos(y * 0.4 + phase) * 10;
-                    z = Math.sin(y * 0.4 + phase) * 10;
+                    x = Math.cos(y * 0.5 + phase) * 12;
+                    z = Math.sin(y * 0.5 + phase) * 12;
                     break;
-                default: // Sphere for others
+                case 'SATURN':
+                    if (i < pCount * 0.4) { // Planet
+                        const phi = Math.acos(-1 + (2 * i) / (pCount * 0.4));
+                        const theta = Math.sqrt(pCount * 0.4 * Math.PI) * phi;
+                        x = 12 * Math.cos(theta) * Math.sin(phi);
+                        y = 12 * Math.sin(theta) * Math.sin(phi);
+                        z = 12 * Math.cos(phi);
+                    } else { // Huge Ring
+                        const rr = 18 + Math.random() * 10;
+                        x = rr * Math.cos(a * 15); z = rr * Math.sin(a * 15);
+                    }
+                    break;
+                case 'FIREWORKS':
+                    const speed = 25 * (i % 100 / 100);
+                    x = Math.cos(a * 20) * speed; y = Math.sin(a * 20) * speed; z = Math.cos(t * 10) * speed;
+                    break;
+                case 'GALAXY':
+                    const arm = i % 4;
+                    const d = Math.random() * 30;
+                    x = Math.cos(d*0.4 + (arm * Math.PI/2)) * d;
+                    z = Math.sin(d*0.4 + (arm * Math.PI/2)) * d;
+                    y = (Math.random()-0.5) * (50/(d+1));
+                    break;
+                default: // Sphere
                     const sPhi = Math.acos(-1 + (2 * i) / pCount);
                     const sTheta = Math.sqrt(pCount * Math.PI) * sPhi;
-                    x = 20 * Math.cos(sTheta) * Math.sin(sPhi);
-                    y = 20 * Math.sin(sTheta) * Math.sin(sPhi);
-                    z = 20 * Math.cos(sPhi);
+                    x = 22 * Math.cos(sTheta) * Math.sin(sPhi);
+                    y = 22 * Math.sin(sTheta) * Math.sin(sPhi);
+                    z = 22 * Math.cos(sPhi);
             }
             targetPositions[idx] = (x * scale) + hX;
-            targetPositions[idx + 1] = (y * scale) + hY;
-            targetPositions[idx + 2] = z * scale;
+            targetPositions[idx+1] = (y * scale) + hY;
+            targetPositions[idx+2] = z * scale;
         }
     }
 
@@ -147,35 +146,43 @@
     hands.setOptions({ maxNumHands: 2, modelComplexity: 1, minDetectionConfidence: 0.7 });
 
     hands.onResults((res) => {
-        const count = res.multiHandLandmarks ? res.multiHandLandmarks.length : 0;
-        handCountUI.innerText = count;
-
-        if (count > 0) {
-            let centerX = 0, centerY = 0, finalScale = 1.0;
-            const h1 = res.multiHandLandmarks[0];
-
-            // Gesture logic: Check if hand is "Open" (fingertips above pips)
-            const isOpen = h1[8].y < h1[6].y && h1[12].y < h1[10].y;
-            if (isOpen && Date.now() - lastGestureTime > 1000) {
+        const hRes = res.multiHandLandmarks;
+        if (hRes && hRes.length > 0) {
+            const h1 = hRes[0];
+            
+            // 1. GESTURE: Mode Switch (Open Palm)
+            const openPalm = h1[8].y < h1[6].y && h1[12].y < h1[10].y && h1[20].y < h1[18].y;
+            if (openPalm && Date.now() - lastSwitch > 1200) {
                 currentMode = (currentMode + 1) % modes.length;
-                lastGestureTime = Date.now();
+                lastSwitch = Date.now();
+                gestureUI.innerText = "MODE CYCLE";
             }
 
-            if (count === 2) {
-                const h2 = res.multiHandLandmarks[1];
-                centerX = (0.5 - (h1[9].x + h2[9].x) / 2) * 60;
-                centerY = (0.5 - (h1[9].y + h2[9].y) / 2) * 50;
+            // 2. GESTURE: Spin (Wrist Rotation approximation)
+            const wristRot = Math.abs(h1[4].x - h1[20].x);
+            spinSpeed = 0.005 + (wristRot * 0.1);
+
+            // 3. GESTURE: Expansion
+            let scaleFactor = 1.0;
+            let hX = 0, hY = 0;
+
+            if (hRes.length === 2) {
+                const h2 = hRes[1];
                 const dist = Math.hypot(h1[9].x - h2[9].x, h1[9].y - h2[9].y);
-                finalScale = dist * 4; // Expand based on hand distance
+                scaleFactor = dist * 5; // Expand based on hand distance
+                hX = (0.5 - (h1[9].x + h2[9].x)/2) * 60;
+                hY = (0.5 - (h1[9].y + h2[9].y)/2) * 50;
+                gestureUI.innerText = "HYPER-EXPAND";
             } else {
-                centerX = (0.5 - h1[9].x) * 60;
-                centerY = (0.5 - h1[9].y) * 50;
-                const fingerSpan = Math.hypot(h1[4].x - h1[20].x, h1[4].y - h1[20].y);
-                finalScale = fingerSpan > 0.15 ? 2.0 : 1.0;
+                hX = (0.5 - h1[9].x) * 60;
+                hY = (0.5 - h1[9].y) * 50;
+                gestureUI.innerText = "TRACKING";
             }
-            setShape(currentMode, centerX, centerY, finalScale);
+
+            setShape(currentMode, hX, hY, scaleFactor);
         } else {
-            setShape(currentMode, 0, 0, 0.5); // Contract when no hands
+            gestureUI.innerText = "IDLE";
+            setShape(currentMode, 0, 0, 0.4);
         }
     });
 
@@ -194,13 +201,13 @@
             function render() {
                 requestAnimationFrame(render);
                 const pa = particles.geometry.attributes.position.array;
-                for (let i = 0; i < pCount * 3; i++) pa[i] += (targetPositions[i] - pa[i]) * 0.1;
+                for (let i = 0; i < pCount * 3; i++) pa[i] += (targetPositions[i] - pa[i]) * 0.12;
                 particles.geometry.attributes.position.needsUpdate = true;
-                particles.rotation.y += 0.005;
+                particles.rotation.y += spinSpeed;
                 renderer.render(scene, camera);
             }
             render();
-        } catch (e) { alert("Camera Error: " + e.message); }
+        } catch (e) { alert("Camera Access Error"); }
     }
 
     startBtn.addEventListener('click', forceStart);
